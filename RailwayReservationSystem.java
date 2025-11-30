@@ -1,7 +1,7 @@
 import java.io.*;
 import java.util.*;
 
-// === Model ===
+// === Train Class (Thread-Safe) ===
 class Train {
     private final boolean[] seats;
 
@@ -10,7 +10,11 @@ class Train {
     }
 
     public synchronized boolean bookSeat(int seatNumber) {
-        if (seatNumber < 0 || seatNumber >= seats.length || seats[seatNumber]) {
+        if (seatNumber < 0 || seatNumber >= seats.length) {
+            System.out.println("Invalid seat number!");
+            return false;
+        }
+        if (seats[seatNumber]) {
             return false;
         }
         seats[seatNumber] = true;
@@ -18,7 +22,11 @@ class Train {
     }
 
     public synchronized boolean cancelSeat(int seatNumber) {
-        if (seatNumber < 0 || seatNumber >= seats.length || !seats[seatNumber]) {
+        if (seatNumber < 0 || seatNumber >= seats.length) {
+            System.out.println("Invalid seat number!");
+            return false;
+        }
+        if (!seats[seatNumber]) {
             return false;
         }
         seats[seatNumber] = false;
@@ -26,7 +34,7 @@ class Train {
     }
 
     public synchronized void showSeats() {
-        System.out.println("Current seat status:");
+        System.out.println("\n===== Current Seat Status =====");
         for (int i = 0; i < seats.length; i++) {
             System.out.println("Seat " + (i + 1) + ": " + (seats[i] ? "Booked" : "Available"));
         }
@@ -36,6 +44,15 @@ class Train {
 // === DAO Layer ===
 class BookingDAO {
     private static final String FILE_NAME = "bookings.txt";
+
+    static {
+        try {
+            File file = new File(FILE_NAME);
+            if (!file.exists()) file.createNewFile();
+        } catch (IOException e) {
+            System.out.println("Error initializing database file.");
+        }
+    }
 
     public static synchronized void saveBooking(String name, int seatNumber) {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(FILE_NAME, true))) {
@@ -52,15 +69,17 @@ class BookingDAO {
 
         try (BufferedReader reader = new BufferedReader(new FileReader(inputFile));
              BufferedWriter writer = new BufferedWriter(new FileWriter(tempFile))) {
+
             String line;
             while ((line = reader.readLine()) != null) {
                 String[] parts = line.split(",");
                 if (parts.length == 2 && Integer.parseInt(parts[1]) == seatNumber + 1) {
-                    continue; // skip the cancelled one
+                    continue; // skip cancelled booking
                 }
                 writer.write(line);
                 writer.newLine();
             }
+
         } catch (IOException e) {
             System.out.println("Error cancelling booking: " + e.getMessage());
         }
@@ -69,20 +88,26 @@ class BookingDAO {
         tempFile.renameTo(inputFile);
     }
 
-    public static void showBookings() {
-        System.out.println("\nBookings from file:");
+    public static synchronized void showBookings() {
+        System.out.println("\n===== All Bookings =====");
         try (BufferedReader br = new BufferedReader(new FileReader(FILE_NAME))) {
             String line;
+            boolean empty = true;
+
             while ((line = br.readLine()) != null) {
                 System.out.println("- " + line);
+                empty = false;
             }
+
+            if (empty) System.out.println("No bookings found.");
+
         } catch (IOException e) {
             System.out.println("Error reading bookings: " + e.getMessage());
         }
     }
 }
 
-// === Payment ===
+// === Payment Gateway ===
 class PaymentGateway {
     public static boolean validatePayment(String user, double amount) {
         System.out.println("Validating payment of Rs." + amount + " for " + user + "...");
@@ -123,7 +148,7 @@ class Passenger implements Runnable {
                     BookingDAO.saveBooking(name, seatNumber);
                     System.out.println(name + " successfully booked seat " + (seatNumber + 1));
                 } else {
-                    System.out.println(name + " failed to book seat " + (seatNumber + 1) + " (Already booked)");
+                    System.out.println("Seat already booked!");
                 }
             } else {
                 System.out.println("Payment failed for " + name);
@@ -133,10 +158,11 @@ class Passenger implements Runnable {
 }
 
 // === Main UI ===
-public class RailwayReservationSystem {
+class RailwayReservationSystem {
     public static void main(String[] args) throws InterruptedException {
         Scanner scanner = new Scanner(System.in);
         Train train = new Train(10);
+
         boolean running = true;
 
         while (running) {
@@ -151,11 +177,13 @@ public class RailwayReservationSystem {
 
             switch (choice) {
                 case 1 -> {
+                    scanner.nextLine();
                     System.out.print("Enter your name: ");
-                    scanner.nextLine(); // consume newline
                     String name = scanner.nextLine();
+
                     System.out.print("Enter seat number (1-10): ");
                     int seat = scanner.nextInt() - 1;
+
                     System.out.print("Enter payment amount: ");
                     double amount = scanner.nextDouble();
 
@@ -164,9 +192,10 @@ public class RailwayReservationSystem {
                     bookThread.join();
                 }
                 case 2 -> {
+                    scanner.nextLine();
                     System.out.print("Enter your name: ");
-                    scanner.nextLine(); // consume newline
                     String name = scanner.nextLine();
+
                     System.out.print("Enter seat number to cancel (1-10): ");
                     int seat = scanner.nextInt() - 1;
 
